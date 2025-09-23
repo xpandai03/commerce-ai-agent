@@ -3,10 +3,20 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Brain, Link, Folder, Send } from "lucide-react"
-import { LiquidMetal, PulsingBorder } from "@paper-design/shaders-react"
 import { motion, AnimatePresence } from "framer-motion"
 import { useState, useRef, useEffect } from "react"
 import { Message } from 'ai'
+import dynamic from 'next/dynamic'
+
+// Dynamic imports for shader components to avoid SSR issues
+const LiquidMetal = dynamic(
+  () => import('@paper-design/shaders-react').then(mod => mod.LiquidMetal),
+  { ssr: false }
+)
+const PulsingBorder = dynamic(
+  () => import('@paper-design/shaders-react').then(mod => mod.PulsingBorder),
+  { ssr: false }
+)
 
 export function ChatInterface() {
   const [isFocused, setIsFocused] = useState(false)

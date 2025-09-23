@@ -3,6 +3,11 @@ import { openai } from '@ai-sdk/openai';
 
 export const runtime = 'edge';
 
+// Check for OpenAI API key
+if (!process.env.OPENAI_API_KEY) {
+  console.warn('Warning: OPENAI_API_KEY is not set');
+}
+
 const systemPrompt = `You are Emer, an AI assistant for Dr. Jason Emer's renowned aesthetic clinic specializing in advanced cosmetic treatments.
 
 Your role is to help patients understand their treatment options, particularly for acne scars and skin rejuvenation. You are professional, empathetic, and knowledgeable about aesthetic procedures.
@@ -71,6 +76,11 @@ When responding:
 Always maintain HIPAA compliance and avoid giving specific medical advice. Instead, provide educational information and encourage professional consultation.`;
 
 export async function POST(req: Request) {
+  // Check for API key before processing
+  if (!process.env.OPENAI_API_KEY) {
+    return new Response('OpenAI API key not configured', { status: 500 });
+  }
+
   try {
     const { messages } = await req.json();
 
