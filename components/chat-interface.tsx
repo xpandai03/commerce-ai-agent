@@ -306,7 +306,7 @@ export function ChatInterface() {
                       <Button
                         type="submit"
                         size="sm"
-                        disabled={!input || !input.trim() || isLoading}
+                        disabled={!input.trim() || isLoading}
                         className="h-10 w-10 rounded-full bg-orange-500 hover:bg-orange-600 text-white p-0 disabled:opacity-50"
                       >
                         <Send className="h-5 w-5" />
@@ -504,7 +504,7 @@ export function ChatInterface() {
                         <Button
                           type="submit"
                           size="sm"
-                          disabled={isLoading || !input || !input.trim()}
+                          disabled={isLoading || !input.trim()}
                           className="h-10 w-10 rounded-full bg-orange-500 hover:bg-orange-600 text-white p-0 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           <Send className="h-5 w-5" />
