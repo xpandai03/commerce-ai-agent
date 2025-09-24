@@ -1,7 +1,6 @@
 "use client"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Brain, Link, Folder, Send } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 import { useState, useRef, useEffect } from "react"
@@ -11,11 +10,17 @@ import dynamic from 'next/dynamic'
 // Dynamic imports for shader components to avoid SSR issues
 const LiquidMetal = dynamic(
   () => import('@paper-design/shaders-react').then(mod => mod.LiquidMetal),
-  { ssr: false }
+  {
+    ssr: false,
+    loading: () => <div className="h-20 w-20" />
+  }
 )
 const PulsingBorder = dynamic(
   () => import('@paper-design/shaders-react').then(mod => mod.PulsingBorder),
-  { ssr: false }
+  {
+    ssr: false,
+    loading: () => null
+  }
 )
 
 export function ChatInterface() {
@@ -24,6 +29,12 @@ export function ChatInterface() {
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  // Open admin panel in new tab
+  const openAdminPanel = (section?: string) => {
+    const url = section ? `/admin/${section}` : '/admin'
+    window.open(url, '_blank', 'noopener,noreferrer')
+  }
 
   // Determine if chat has started based on messages
   const hasStarted = messages.length > 0
@@ -274,6 +285,7 @@ export function ChatInterface() {
                         variant="ghost"
                         size="sm"
                         className="h-9 w-9 rounded-full bg-zinc-800 hover:bg-zinc-700 text-zinc-100 hover:text-white p-0"
+                        onClick={() => openAdminPanel('prompts')}
                       >
                         <Brain className="h-4 w-4" />
                       </Button>
@@ -282,24 +294,21 @@ export function ChatInterface() {
                         variant="ghost"
                         size="sm"
                         className="h-9 w-9 rounded-full bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white p-0"
+                        onClick={() => openAdminPanel('settings')}
                       >
                         <Link className="h-4 w-4" />
                       </Button>
                       {/* Center model selector */}
                       <div className="flex items-center">
-                        <Select defaultValue="gpt-4">
-                          <SelectTrigger className="bg-zinc-900 border-[#3D3D3D] text-white hover:bg-zinc-700 text-xs rounded-full px-2 h-8 min-w-[150px]">
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs">⚡</span>
-                              <SelectValue />
-                            </div>
-                          </SelectTrigger>
-                          <SelectContent className="bg-zinc-900 z-30 border-[#3D3D3D] rounded-xl z-30">
-                            <SelectItem value="gpt-4" className="text-white hover:bg-zinc-700 rounded-lg">
-                              GPT-4 Turbo
-                            </SelectItem>
-                          </SelectContent>
-                        </Select>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          className="bg-zinc-900 border border-[#3D3D3D] text-white hover:bg-zinc-700 text-xs rounded-full px-3 h-8 min-w-[150px]"
+                          onClick={() => openAdminPanel('models')}
+                        >
+                          <span className="text-xs mr-2">⚡</span>
+                          GPT-4 Turbo
+                        </Button>
                       </div>
                     </div>
 
@@ -310,6 +319,7 @@ export function ChatInterface() {
                         variant="ghost"
                         size="sm"
                         className="h-10 w-10 rounded-full bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white p-0"
+                        onClick={() => openAdminPanel('knowledge')}
                       >
                         <Folder className="h-5 w-5" />
                       </Button>
@@ -485,19 +495,15 @@ export function ChatInterface() {
                         </Button>
                         {/* Model selector */}
                         <div className="flex items-center">
-                          <Select defaultValue="gpt-4">
-                            <SelectTrigger className="bg-zinc-900 border-[#3D3D3D] text-white hover:bg-zinc-700 text-xs rounded-full px-2 h-8 min-w-[150px]">
-                              <div className="flex items-center gap-2">
-                                <span className="text-xs">⚡</span>
-                                <SelectValue />
-                              </div>
-                            </SelectTrigger>
-                            <SelectContent className="bg-zinc-900 z-30 border-[#3D3D3D] rounded-xl">
-                              <SelectItem value="gpt-4" className="text-white hover:bg-zinc-700 rounded-lg">
-                                GPT-4 Turbo
-                              </SelectItem>
-                            </SelectContent>
-                          </Select>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            className="bg-zinc-900 border border-[#3D3D3D] text-white hover:bg-zinc-700 text-xs rounded-full px-3 h-8 min-w-[150px]"
+                            onClick={() => openAdminPanel()}
+                          >
+                            <span className="text-xs mr-2">⚡</span>
+                            GPT-4 Turbo
+                          </Button>
                         </div>
                       </div>
 

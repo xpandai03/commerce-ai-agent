@@ -1,351 +1,591 @@
-"use client"
+'use client'
 
-import { useState } from "react"
-import { Card } from "@/components/ui/card"
+import { useState, useEffect } from 'react'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Database, Edit, Plus, Search, Trash2, Tag } from "lucide-react"
-import { toast } from "sonner"
+import { Separator } from "@/components/ui/separator"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import {
+  FolderIcon,
+  FileTextIcon,
+  Trash2Icon,
+  PlusIcon,
+  RefreshCwIcon,
+  CheckCircle2,
+  AlertCircle,
+  ExternalLink,
+  CloudIcon,
+  LinkIcon,
+  FileIcon,
+  FolderOpenIcon,
+  ArrowLeftIcon,
+  Database
+} from 'lucide-react'
 
-interface KnowledgeEntry {
+interface KnowledgeItem {
   id: string
-  category: string
   title: string
   content: string
-  tags: string[]
-  isActive: boolean
+  category: 'treatment' | 'product' | 'general' | 'pricing'
+  source?: 'manual' | 'pdf' | 'drive'
+  created_at?: string
+  fileName?: string
+  driveFileId?: string
+}
+
+interface DriveFile {
+  id: string
+  name: string
+  mimeType: string
+  modifiedTime: string
+  size?: string
+  webViewLink?: string
 }
 
 export default function KnowledgePage() {
-  const [searchQuery, setSearchQuery] = useState("")
-  const [selectedCategory, setSelectedCategory] = useState("all")
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
+  const [items, setItems] = useState<KnowledgeItem[]>([])
+  const [newItem, setNewItem] = useState({
+    title: '',
+    content: '',
+    category: 'general' as const
+  })
+  const [isLoading, setIsLoading] = useState(false)
+  const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
+  const [uploadProgress, setUploadProgress] = useState<string | null>(null)
 
-  // Sample data - will be replaced with database data
-  const [entries, setEntries] = useState<KnowledgeEntry[]>([
-    {
-      id: "1",
-      category: "Treatments",
-      title: "Laser Resurfacing Details",
-      content: "CO2 laser resurfacing is our most aggressive treatment for deep acne scars. It works by removing the outer layers of damaged skin and stimulating collagen production. Recovery typically takes 5-7 days with redness lasting up to 2 weeks. Results continue to improve for 6 months post-treatment.",
-      tags: ["laser", "co2", "acne scars", "resurfacing"],
-      isActive: true
-    },
-    {
-      id: "2",
-      category: "Pricing",
-      title: "Package Deals",
-      content: "We offer combination treatment packages with 10-15% discounts. Popular packages include: Acne Scar Transformation (3 laser + 3 PRP sessions) for $4500, and Complete Skin Renewal (2 laser + 4 chemical peels) for $2800.",
-      tags: ["pricing", "packages", "discounts"],
-      isActive: true
-    },
-    {
-      id: "3",
-      category: "FAQs",
-      title: "Recovery Time",
-      content: "Recovery time varies by treatment: Laser resurfacing (5-7 days), Microneedling with PRP (1-2 days), Chemical peels (3-7 days), Subcision (minimal), Dermal fillers (no downtime).",
-      tags: ["recovery", "downtime", "faq"],
-      isActive: true
+  // Google Drive states
+  const [driveStatus, setDriveStatus] = useState<{
+    configured: boolean
+    authenticated: boolean
+    folderConnected: boolean
+    folderUrl?: string
+    folderName?: string
+  }>({
+    configured: false,
+    authenticated: false,
+    folderConnected: false
+  })
+  const [driveFiles, setDriveFiles] = useState<DriveFile[]>([])
+  const [selectedFolder, setSelectedFolder] = useState('')
+  const [currentFolderId, setCurrentFolderId] = useState<string | null>(null)
+  const [folderPath, setFolderPath] = useState<{ id: string, name: string }[]>([])
+
+  useEffect(() => {
+    fetchKnowledgeItems()
+    checkDriveStatus()
+  }, [])
+
+  const checkDriveStatus = async () => {
+    try {
+      const res = await fetch('/api/drive/status')
+      if (res.ok) {
+        const data = await res.json()
+        setDriveStatus(data)
+        if (data.folderUrl) {
+          setSelectedFolder(data.folderUrl)
+          // Load files from connected folder
+          if (data.authenticated && data.folderConnected) {
+            loadDriveFolder(data.folderUrl)
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error checking drive status:', error)
     }
-  ])
+  }
 
-  const [newEntry, setNewEntry] = useState<Partial<KnowledgeEntry>>({
-    category: "Treatments",
-    title: "",
-    content: "",
-    tags: [],
-    isActive: true
-  })
+  const loadDriveFolder = async (urlOrId: string) => {
+    setIsLoading(true)
+    try {
+      const res = await fetch('/api/drive/folder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ folderUrl: urlOrId })
+      })
 
-  const categories = ["Treatments", "Pricing", "FAQs", "Procedures", "Aftercare"]
+      if (res.ok) {
+        const data = await res.json()
+        setDriveFiles(data.files || [])
+        setCurrentFolderId(data.folderId)
 
-  const filteredEntries = entries.filter(entry => {
-    const matchesSearch = entry.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         entry.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         entry.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()))
-    const matchesCategory = selectedCategory === "all" || entry.category === selectedCategory
-    return matchesSearch && matchesCategory
-  })
+        // Update folder path if it's a new folder
+        if (data.folderInfo) {
+          if (folderPath.length === 0 || folderPath[folderPath.length - 1].id !== data.folderId) {
+            setFolderPath([...folderPath, { id: data.folderId, name: data.folderInfo.name }])
+          }
+        }
 
-  const handleAddEntry = () => {
-    if (!newEntry.title || !newEntry.content) {
-      toast.error("Please fill in all required fields")
+        setMessage({ type: 'success', text: `Loaded ${data.files?.length || 0} files from folder` })
+      } else {
+        const error = await res.json()
+        setMessage({ type: 'error', text: error.error || 'Failed to load folder' })
+      }
+    } catch (error) {
+      setMessage({ type: 'error', text: 'Error loading folder' })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const navigateToFolder = async (file: DriveFile) => {
+    if (file.mimeType === 'application/vnd.google-apps.folder') {
+      await loadDriveFolder(file.id)
+    }
+  }
+
+  const navigateBack = async () => {
+    if (folderPath.length > 1) {
+      const newPath = folderPath.slice(0, -1)
+      const parentFolder = newPath[newPath.length - 1]
+      setFolderPath(newPath)
+      await loadDriveFolder(parentFolder.id)
+    }
+  }
+
+  const connectDriveFolder = async () => {
+    if (!selectedFolder) {
+      setMessage({ type: 'error', text: 'Please enter a Google Drive folder URL' })
       return
     }
 
-    const entry: KnowledgeEntry = {
-      id: Date.now().toString(),
-      category: newEntry.category || "Treatments",
-      title: newEntry.title,
-      content: newEntry.content,
-      tags: newEntry.tags || [],
-      isActive: true
+    setIsLoading(true)
+    try {
+      const res = await fetch('/api/drive/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ folderUrl: selectedFolder })
+      })
+
+      if (res.ok) {
+        const data = await res.json()
+        setDriveStatus(prev => ({
+          ...prev,
+          folderConnected: true,
+          folderUrl: selectedFolder,
+          folderName: data.folderName
+        }))
+        await loadDriveFolder(selectedFolder)
+        setMessage({ type: 'success', text: 'Successfully connected to Google Drive folder' })
+      } else {
+        const error = await res.json()
+        setMessage({ type: 'error', text: error.error || 'Failed to connect folder' })
+      }
+    } catch (error) {
+      setMessage({ type: 'error', text: 'Error connecting to folder' })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const syncDriveFile = async (file: DriveFile) => {
+    setIsLoading(true)
+    setUploadProgress(`Syncing ${file.name}...`)
+
+    try {
+      const res = await fetch('/api/drive/sync-file', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileId: file.id, fileName: file.name, mimeType: file.mimeType })
+      })
+
+      if (res.ok) {
+        const data = await res.json()
+        await fetchKnowledgeItems()
+        setMessage({ type: 'success', text: `Successfully synced ${file.name}` })
+      } else {
+        const error = await res.json()
+        setMessage({ type: 'error', text: error.error || 'Failed to sync file' })
+      }
+    } catch (error) {
+      setMessage({ type: 'error', text: 'Error syncing file' })
+    } finally {
+      setIsLoading(false)
+      setUploadProgress(null)
+    }
+  }
+
+  const syncAllFiles = async () => {
+    const syncableFiles = driveFiles.filter(f =>
+      f.mimeType !== 'application/vnd.google-apps.folder' &&
+      (f.mimeType === 'application/vnd.google-apps.document' ||
+       f.mimeType === 'application/vnd.google-apps.spreadsheet' ||
+       f.mimeType === 'application/pdf' ||
+       f.mimeType?.startsWith('text/'))
+    )
+
+    if (syncableFiles.length === 0) {
+      setMessage({ type: 'error', text: 'No syncable files found in this folder' })
+      return
     }
 
-    setEntries([...entries, entry])
-    toast.success("Knowledge entry added (not saved to database yet)")
-    setIsAddDialogOpen(false)
-    setNewEntry({
-      category: "Treatments",
-      title: "",
-      content: "",
-      tags: [],
-      isActive: true
-    })
+    setIsLoading(true)
+    let synced = 0
+
+    for (const file of syncableFiles) {
+      setUploadProgress(`Syncing ${synced + 1}/${syncableFiles.length}: ${file.name}`)
+      try {
+        const res = await fetch('/api/drive/sync-file', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fileId: file.id, fileName: file.name, mimeType: file.mimeType })
+        })
+        if (res.ok) synced++
+      } catch (error) {
+        console.error(`Error syncing ${file.name}:`, error)
+      }
+    }
+
+    await fetchKnowledgeItems()
+    setMessage({ type: 'success', text: `Successfully synced ${synced} files` })
+    setUploadProgress(null)
+    setIsLoading(false)
   }
 
-  const handleDeleteEntry = (id: string) => {
-    setEntries(entries.filter(entry => entry.id !== id))
-    toast.success("Entry deleted (not saved to database yet)")
+  const fetchKnowledgeItems = async () => {
+    try {
+      const res = await fetch('/api/knowledge')
+      if (res.ok) {
+        const data = await res.json()
+        // Handle both old and new formats
+        const entries = Array.isArray(data) ? data : (data.entries || [])
+        const formattedItems = entries.map((item: any) => ({
+          id: item.id,
+          title: item.title,
+          content: item.content,
+          category: item.category || 'general',
+          source: item.source,
+          fileName: item.fileName,
+          driveFileId: item.driveFileId,
+          created_at: item.created_at
+        }))
+        setItems(formattedItems)
+      }
+    } catch (error) {
+      console.error('Error fetching knowledge items:', error)
+    }
   }
 
-  const handleToggleActive = (id: string) => {
-    setEntries(entries.map(entry =>
-      entry.id === id ? { ...entry, isActive: !entry.isActive } : entry
-    ))
-    toast.success("Entry status updated (not saved to database yet)")
+  const handleAddItem = async () => {
+    if (!newItem.title || !newItem.content) {
+      setMessage({ type: 'error', text: 'Please fill in all fields' })
+      return
+    }
+
+    setIsLoading(true)
+    try {
+      const res = await fetch('/api/knowledge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...newItem, source: 'manual' })
+      })
+
+      if (res.ok) {
+        await fetchKnowledgeItems()
+        setNewItem({ title: '', content: '', category: 'general' })
+        setMessage({ type: 'success', text: 'Knowledge item added successfully' })
+      } else {
+        setMessage({ type: 'error', text: 'Failed to add knowledge item' })
+      }
+    } catch (error) {
+      setMessage({ type: 'error', text: 'Error adding knowledge item' })
+    } finally {
+      setIsLoading(false)
+    }
   }
 
-  const handleTagInput = (value: string) => {
-    const tags = value.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0)
-    setNewEntry({ ...newEntry, tags })
+  const handleDeleteItem = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this item?')) return
+
+    setIsLoading(true)
+    try {
+      const res = await fetch(`/api/knowledge?id=${id}`, { method: 'DELETE' })
+
+      if (res.ok) {
+        await fetchKnowledgeItems()
+        setMessage({ type: 'success', text: 'Item deleted successfully' })
+      } else {
+        setMessage({ type: 'error', text: 'Failed to delete item' })
+      }
+    } catch (error) {
+      setMessage({ type: 'error', text: 'Error deleting item' })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const getFileIcon = (mimeType: string) => {
+    if (mimeType === 'application/vnd.google-apps.folder') return <FolderIcon className="h-4 w-4" />
+    if (mimeType === 'application/vnd.google-apps.document') return <FileTextIcon className="h-4 w-4" />
+    if (mimeType === 'application/pdf') return <FileTextIcon className="h-4 w-4" />
+    return <FileIcon className="h-4 w-4" />
+  }
+
+  const isSyncable = (mimeType: string) => {
+    return mimeType !== 'application/vnd.google-apps.folder' &&
+           (mimeType === 'application/vnd.google-apps.document' ||
+            mimeType === 'application/vnd.google-apps.spreadsheet' ||
+            mimeType === 'application/pdf' ||
+            mimeType?.startsWith('text/'))
   }
 
   return (
-    <div>
-      <div className="mb-8">
-        <h2 className="text-3xl font-bold">Knowledge Base</h2>
-        <p className="text-zinc-400 mt-2">Manage treatment information, FAQs, and pricing</p>
-      </div>
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between">
+            <span className="flex items-center gap-2">
+              <Database className="h-5 w-5" />
+              Knowledge Base Management
+            </span>
+            {driveStatus.authenticated && (
+              <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300">
+                <CheckCircle2 className="h-3 w-3 mr-1" />
+                Google Drive Connected
+              </Badge>
+            )}
+          </CardTitle>
+          <CardDescription>
+            Manage AI knowledge through Google Drive sync or manual entries
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {message && (
+            <Alert className={`mb-4 ${message.type === 'error' ? 'border-red-200' : 'border-green-200'}`}>
+              {message.type === 'error' ? (
+                <AlertCircle className="h-4 w-4" />
+              ) : (
+                <CheckCircle2 className="h-4 w-4" />
+              )}
+              <AlertDescription>{message.text}</AlertDescription>
+            </Alert>
+          )}
 
-      {/* Stats */}
-      <div className="grid gap-4 md:grid-cols-4 mb-6">
-        <Card className="bg-zinc-900 border-zinc-800 p-4">
-          <div className="flex items-center gap-3">
-            <Database className="h-5 w-5 text-orange-500" />
-            <div>
-              <p className="text-2xl font-bold">{entries.length}</p>
-              <p className="text-sm text-zinc-400">Total Entries</p>
-            </div>
-          </div>
-        </Card>
-        <Card className="bg-zinc-900 border-zinc-800 p-4">
-          <div className="flex items-center gap-3">
-            <Tag className="h-5 w-5 text-blue-500" />
-            <div>
-              <p className="text-2xl font-bold">{categories.length}</p>
-              <p className="text-sm text-zinc-400">Categories</p>
-            </div>
-          </div>
-        </Card>
-        <Card className="bg-zinc-900 border-zinc-800 p-4">
-          <div className="flex items-center gap-3">
-            <div className="h-5 w-5 rounded-full bg-green-500" />
-            <div>
-              <p className="text-2xl font-bold">{entries.filter(e => e.isActive).length}</p>
-              <p className="text-sm text-zinc-400">Active</p>
-            </div>
-          </div>
-        </Card>
-        <Card className="bg-zinc-900 border-zinc-800 p-4">
-          <div className="flex items-center gap-3">
-            <div className="h-5 w-5 rounded-full bg-zinc-500" />
-            <div>
-              <p className="text-2xl font-bold">{entries.filter(e => !e.isActive).length}</p>
-              <p className="text-sm text-zinc-400">Inactive</p>
-            </div>
-          </div>
-        </Card>
-      </div>
+          <Tabs defaultValue="drive" className="mt-4">
+            <TabsList className="grid w-full grid-cols-3">
+              <TabsTrigger value="drive">Google Drive</TabsTrigger>
+              <TabsTrigger value="manual">Manual Entry</TabsTrigger>
+              <TabsTrigger value="items">Knowledge Items ({items.length})</TabsTrigger>
+            </TabsList>
 
-      {/* Filters and Actions */}
-      <div className="flex flex-col md:flex-row gap-4 mb-6">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-3 h-4 w-4 text-zinc-400" />
-          <Input
-            placeholder="Search entries..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10 bg-zinc-900 border-zinc-800"
-          />
-        </div>
-        <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-          <SelectTrigger className="w-[180px] bg-zinc-900 border-zinc-800">
-            <SelectValue placeholder="All Categories" />
-          </SelectTrigger>
-          <SelectContent className="bg-zinc-900 border-zinc-800">
-            <SelectItem value="all">All Categories</SelectItem>
-            {categories.map(cat => (
-              <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-          <DialogTrigger asChild>
-            <Button className="bg-orange-600 hover:bg-orange-700">
-              <Plus className="h-4 w-4 mr-2" />
-              Add Entry
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="bg-zinc-900 border-zinc-800 text-white">
-            <DialogHeader>
-              <DialogTitle>Add Knowledge Entry</DialogTitle>
-              <DialogDescription className="text-zinc-400">
-                Add a new piece of information to the knowledge base
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div className="space-y-2">
-                <Label>Category</Label>
-                <Select
-                  value={newEntry.category}
-                  onValueChange={(value) => setNewEntry({ ...newEntry, category: value })}
-                >
-                  <SelectTrigger className="bg-black border-zinc-800">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-zinc-900 border-zinc-800">
-                    {categories.map(cat => (
-                      <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Title</Label>
-                <Input
-                  value={newEntry.title}
-                  onChange={(e) => setNewEntry({ ...newEntry, title: e.target.value })}
-                  className="bg-black border-zinc-800"
-                  placeholder="e.g., Laser Treatment Details"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Content</Label>
-                <Textarea
-                  value={newEntry.content}
-                  onChange={(e) => setNewEntry({ ...newEntry, content: e.target.value })}
-                  className="min-h-[150px] bg-black border-zinc-800"
-                  placeholder="Enter the knowledge content..."
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Tags (comma-separated)</Label>
-                <Input
-                  value={newEntry.tags?.join(', ')}
-                  onChange={(e) => handleTagInput(e.target.value)}
-                  className="bg-black border-zinc-800"
-                  placeholder="e.g., laser, treatment, recovery"
-                />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button
-                variant="outline"
-                onClick={() => setIsAddDialogOpen(false)}
-                className="bg-zinc-800 border-zinc-700"
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={handleAddEntry}
-                className="bg-orange-600 hover:bg-orange-700"
-              >
-                Add Entry
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </div>
-
-      {/* Knowledge Table */}
-      <Card className="bg-zinc-900 border-zinc-800">
-        <Table>
-          <TableHeader>
-            <TableRow className="border-zinc-800">
-              <TableHead>Title</TableHead>
-              <TableHead>Category</TableHead>
-              <TableHead>Tags</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filteredEntries.map((entry) => (
-              <TableRow key={entry.id} className="border-zinc-800">
-                <TableCell>
-                  <div>
-                    <p className="font-medium">{entry.title}</p>
-                    <p className="text-sm text-zinc-400 line-clamp-1">{entry.content}</p>
+            <TabsContent value="drive" className="space-y-4">
+              <div className="space-y-4">
+                <div className="flex gap-2">
+                  <div className="flex-1">
+                    <Label>Google Drive Folder URL or ID</Label>
+                    <Input
+                      placeholder="https://drive.google.com/drive/folders/..."
+                      value={selectedFolder}
+                      onChange={(e) => setSelectedFolder(e.target.value)}
+                      className="mt-1"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Paste the URL of your Google Drive folder or enter its ID
+                    </p>
                   </div>
-                </TableCell>
-                <TableCell>
-                  <Badge variant="outline" className="border-zinc-700">
-                    {entry.category}
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  <div className="flex flex-wrap gap-1">
-                    {entry.tags.map(tag => (
-                      <Badge key={tag} className="bg-zinc-800 text-xs">
-                        {tag}
-                      </Badge>
-                    ))}
+                  <div className="flex items-end">
+                    <Button
+                      onClick={connectDriveFolder}
+                      disabled={isLoading || !selectedFolder}
+                    >
+                      <LinkIcon className="h-4 w-4 mr-2" />
+                      Connect Folder
+                    </Button>
                   </div>
-                </TableCell>
-                <TableCell>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleToggleActive(entry.id)}
-                    className={entry.isActive ? "text-green-500" : "text-zinc-500"}
+                </div>
+
+                {currentFolderId && (
+                  <>
+                    <Separator />
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          {folderPath.length > 1 && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={navigateBack}
+                            >
+                              <ArrowLeftIcon className="h-4 w-4" />
+                            </Button>
+                          )}
+                          <h3 className="font-semibold">
+                            {folderPath.length > 0 ? folderPath[folderPath.length - 1].name : 'Drive Files'}
+                          </h3>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => loadDriveFolder(currentFolderId)}
+                            disabled={isLoading}
+                          >
+                            <RefreshCwIcon className="h-4 w-4 mr-1" />
+                            Refresh
+                          </Button>
+                          <Button
+                            size="sm"
+                            onClick={syncAllFiles}
+                            disabled={isLoading}
+                          >
+                            <CloudIcon className="h-4 w-4 mr-1" />
+                            Sync All Files
+                          </Button>
+                        </div>
+                      </div>
+
+                      {uploadProgress && (
+                        <Alert>
+                          <AlertDescription>{uploadProgress}</AlertDescription>
+                        </Alert>
+                      )}
+
+                      <div className="border rounded-lg divide-y max-h-96 overflow-y-auto">
+                        {driveFiles.length === 0 ? (
+                          <div className="p-4 text-center text-gray-500">
+                            No files found in this folder
+                          </div>
+                        ) : (
+                          driveFiles.map((file) => (
+                            <div
+                              key={file.id}
+                              className="p-3 flex items-center justify-between hover:bg-gray-50"
+                            >
+                              <div
+                                className={`flex items-center gap-2 flex-1 ${
+                                  file.mimeType === 'application/vnd.google-apps.folder'
+                                    ? 'cursor-pointer hover:text-blue-600'
+                                    : ''
+                                }`}
+                                onClick={() => file.mimeType === 'application/vnd.google-apps.folder' && navigateToFolder(file)}
+                              >
+                                {getFileIcon(file.mimeType)}
+                                <span className="text-sm">{file.name}</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {file.webViewLink && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => window.open(file.webViewLink, '_blank')}
+                                  >
+                                    <ExternalLink className="h-3 w-3" />
+                                  </Button>
+                                )}
+                                {isSyncable(file.mimeType) && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => syncDriveFile(file)}
+                                    disabled={isLoading}
+                                  >
+                                    <CloudIcon className="h-3 w-3 mr-1" />
+                                    Sync
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </TabsContent>
+
+            <TabsContent value="manual" className="space-y-4">
+              <div className="space-y-4">
+                <div>
+                  <Label>Title</Label>
+                  <Input
+                    value={newItem.title}
+                    onChange={(e) => setNewItem({ ...newItem, title: e.target.value })}
+                    placeholder="e.g., Morpheus8 Treatment Details"
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label>Category</Label>
+                  <select
+                    value={newItem.category}
+                    onChange={(e) => setNewItem({ ...newItem, category: e.target.value as any })}
+                    className="w-full mt-1 rounded-md border border-gray-300 px-3 py-2"
                   >
-                    {entry.isActive ? "Active" : "Inactive"}
-                  </Button>
-                </TableCell>
-                <TableCell className="text-right">
-                  <div className="flex justify-end gap-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-zinc-400 hover:text-white"
-                    >
-                      <Edit className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleDeleteEntry(entry.id)}
-                      className="text-zinc-400 hover:text-red-500"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </Card>
+                    <option value="treatment">Treatment</option>
+                    <option value="product">Product</option>
+                    <option value="pricing">Pricing</option>
+                    <option value="general">General</option>
+                  </select>
+                </div>
+                <div>
+                  <Label>Content</Label>
+                  <Textarea
+                    value={newItem.content}
+                    onChange={(e) => setNewItem({ ...newItem, content: e.target.value })}
+                    placeholder="Enter detailed information..."
+                    className="mt-1 h-32"
+                  />
+                </div>
+                <Button onClick={handleAddItem} disabled={isLoading}>
+                  <PlusIcon className="h-4 w-4 mr-2" />
+                  Add Knowledge Item
+                </Button>
+              </div>
+            </TabsContent>
 
-      {/* Info Card */}
-      <Card className="bg-zinc-900/50 border-zinc-800 p-4 mt-6">
-        <div className="flex items-start gap-3">
-          <Database className="h-5 w-5 text-orange-500 mt-0.5" />
-          <div>
-            <h4 className="font-semibold mb-1">Knowledge Base Status</h4>
-            <p className="text-sm text-zinc-400">
-              The knowledge base is currently displaying sample data. Database integration is coming soon.
-              Once connected, the AI assistant will reference this information when answering questions.
-            </p>
-          </div>
-        </div>
+            <TabsContent value="items" className="space-y-4">
+              <div className="space-y-4">
+                {items.length === 0 ? (
+                  <Card>
+                    <CardContent className="text-center py-8 text-gray-500">
+                      No knowledge items yet. Add items manually or sync from Google Drive.
+                    </CardContent>
+                  </Card>
+                ) : (
+                  items.map((item) => (
+                    <Card key={item.id}>
+                      <CardContent className="pt-6">
+                        <div className="flex justify-between items-start mb-2">
+                          <div className="flex-1">
+                            <h3 className="font-semibold">{item.title}</h3>
+                            <div className="flex gap-2 mt-1">
+                              <Badge variant="outline">{item.category}</Badge>
+                              {item.source && (
+                                <Badge variant="secondary">
+                                  {item.source === 'drive' ? 'Google Drive' : item.source}
+                                </Badge>
+                              )}
+                              {item.fileName && (
+                                <span className="text-xs text-gray-500">
+                                  {item.fileName}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDeleteItem(item.id)}
+                          >
+                            <Trash2Icon className="h-4 w-4" />
+                          </Button>
+                        </div>
+                        <p className="text-sm text-gray-600 whitespace-pre-wrap line-clamp-3">
+                          {item.content}
+                        </p>
+                      </CardContent>
+                    </Card>
+                  ))
+                )}
+              </div>
+            </TabsContent>
+          </Tabs>
+        </CardContent>
       </Card>
     </div>
   )

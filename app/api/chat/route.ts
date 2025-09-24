@@ -8,7 +8,8 @@ if (!process.env.OPENAI_API_KEY) {
   console.warn('Warning: OPENAI_API_KEY is not set');
 }
 
-const systemPrompt = `You are Emer, an AI assistant for Dr. Jason Emer's renowned aesthetic clinic specializing in advanced cosmetic treatments.
+// Default prompt as fallback
+const DEFAULT_PROMPT = `You are Emer, an AI assistant for Dr. Jason Emer's renowned aesthetic clinic specializing in advanced cosmetic treatments.
 
 Your role is to help patients understand their treatment options, particularly for acne scars and skin rejuvenation. You are professional, empathetic, and knowledgeable about aesthetic procedures.
 
@@ -75,6 +76,111 @@ When responding:
 
 Always maintain HIPAA compliance and avoid giving specific medical advice. Instead, provide educational information and encourage professional consultation.`;
 
+async function getActivePrompt(): Promise<string> {
+  try {
+    // Import the prompt store directly to ensure we get the latest in-memory version
+    const { promptStore } = await import('@/lib/prompt-store');
+    const memoryPrompt = promptStore.getActivePrompt();
+
+    // If we have a custom prompt in memory, use it immediately
+    if (memoryPrompt.id !== 'default') {
+      console.log('Chat using custom prompt from memory store');
+      return memoryPrompt.content;
+    }
+
+    // Otherwise try to fetch from the API (which might have database data)
+    const baseUrl = process.env.NODE_ENV === 'production'
+      ? process.env.VERCEL_URL
+        ? `https://${process.env.VERCEL_URL}`
+        : 'https://your-domain.com'
+      : 'http://localhost:3000';
+
+    const response = await fetch(`${baseUrl}/api/prompts/active`, {
+      cache: 'no-store' // Never cache, always get fresh data
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      console.log('Chat using prompt from:', data.source);
+      return data.content;
+    }
+  } catch (error) {
+    console.error('Error fetching active prompt:', error);
+  }
+
+  console.log('Chat falling back to default prompt');
+  return DEFAULT_PROMPT;
+}
+
+// Keep knowledge cache since it changes less frequently
+let knowledgeCache: { entries: any[]; timestamp: number } | null = null;
+const KNOWLEDGE_CACHE_TTL = 30000; // 30 seconds for knowledge (reduced for testing)
+
+async function getActiveKnowledge(): Promise<any[]> {
+  // Check cache first (knowledge changes less frequently than prompts)
+  if (knowledgeCache && Date.now() - knowledgeCache.timestamp < KNOWLEDGE_CACHE_TTL) {
+    console.log('Using cached knowledge:', knowledgeCache.entries.length, 'entries');
+    return knowledgeCache.entries;
+  }
+
+  try {
+    const baseUrl = process.env.NODE_ENV === 'production'
+      ? process.env.VERCEL_URL
+        ? `https://${process.env.VERCEL_URL}`
+        : 'https://your-domain.com'
+      : 'http://localhost:3000';
+
+    const response = await fetch(`${baseUrl}/api/knowledge/active`, {
+      next: { revalidate: 60 } // Next.js cache
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      console.log('Fetched knowledge from API:', data.length, 'entries');
+      knowledgeCache = {
+        entries: data,
+        timestamp: Date.now()
+      };
+      return data;
+    }
+  } catch (error) {
+    console.error('Error fetching active knowledge:', error);
+  }
+
+  return [];
+}
+
+function buildSystemPrompt(basePrompt: string, knowledgeEntries: any[]): string {
+  if (knowledgeEntries.length === 0) {
+    return basePrompt;
+  }
+
+  let knowledgeSection = '\n\nADDITIONAL KNOWLEDGE BASE:\n';
+  knowledgeSection += 'When referencing information from these sources, please cite them by mentioning [Source: filename] at the end of relevant statements.\n';
+
+  const categorizedKnowledge: { [key: string]: any[] } = {};
+
+  knowledgeEntries.forEach(entry => {
+    if (!categorizedKnowledge[entry.category]) {
+      categorizedKnowledge[entry.category] = [];
+    }
+    categorizedKnowledge[entry.category].push(entry);
+  });
+
+  Object.keys(categorizedKnowledge).sort().forEach(category => {
+    knowledgeSection += `\n${category.toUpperCase()}:\n`;
+    categorizedKnowledge[category].forEach(entry => {
+      const sourceInfo = entry.fileName ? ` [Source: ${entry.fileName}]` : '';
+      knowledgeSection += `- ${entry.title}: ${entry.content}${sourceInfo}\n`;
+      if (entry.tags && entry.tags.length > 0) {
+        knowledgeSection += `  Tags: ${entry.tags.join(', ')}\n`;
+      }
+    });
+  });
+
+  return basePrompt + knowledgeSection;
+}
+
 export async function POST(req: Request) {
   // Check for API key before processing
   if (!process.env.OPENAI_API_KEY) {
@@ -83,6 +189,19 @@ export async function POST(req: Request) {
 
   try {
     const { messages } = await req.json();
+
+    // Get active prompt and knowledge in parallel
+    const [basePrompt, knowledgeEntries] = await Promise.all([
+      getActivePrompt(),
+      getActiveKnowledge()
+    ]);
+
+    // Build the complete system prompt with knowledge
+    const systemPrompt = buildSystemPrompt(basePrompt, knowledgeEntries);
+    console.log('Chat using', knowledgeEntries.length, 'knowledge entries');
+    if (knowledgeEntries.length > 0) {
+      console.log('Knowledge titles:', knowledgeEntries.map(e => e.title));
+    }
 
     const result = streamText({
       model: openai('gpt-4-turbo'),

@@ -35,6 +35,7 @@ npm run dev
 ### Prerequisites
 - Vercel account
 - OpenAI API key
+- (Optional) Supabase account for database features
 
 ### Deployment Steps
 
@@ -47,9 +48,18 @@ npm run dev
    In Vercel project settings, add:
    ```
    OPENAI_API_KEY=your_actual_openai_api_key_here
+   ADMIN_PASSWORD=your_secure_admin_password
+   ADMIN_PASSWORD_HASH=your_password_hash
+
+   # Optional - for database features
+   NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
    ```
 
-   ⚠️ **Important**: Make sure to add your actual OpenAI API key, not a placeholder
+   ⚠️ **Important**:
+   - Add your actual OpenAI API key, not a placeholder
+   - Change the default admin password for security
+   - Without Supabase, admin panel will use fallback mode
 
 3. **Build Settings**
 
@@ -100,7 +110,12 @@ npm run dev
 ## 🎯 Features
 
 - **AI Chat**: Streaming responses powered by GPT-4 Turbo
-- **Admin Panel**: Manage prompts and knowledge base (at `/admin`)
+- **Admin Panel**: Full CRUD operations for prompts and knowledge base (at `/admin`)
+  - **Dynamic Prompts**: Edit system prompts that immediately affect chat behavior
+  - **Knowledge Management**: Add, edit, delete knowledge entries
+  - **Document Upload**: Upload documents to extract knowledge automatically
+  - **Password Protected**: Basic auth protection for admin routes
+- **Database Integration**: Optional Supabase for persistent data
 - **Beautiful UI**: V0-designed interface with animations
 - **Edge Runtime**: Fast, globally distributed API
 
@@ -109,8 +124,10 @@ npm run dev
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `OPENAI_API_KEY` | Yes | Your OpenAI API key for chat functionality |
-| `NEXT_PUBLIC_SUPABASE_URL` | No | Supabase URL for admin features (future) |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | No | Supabase anon key (future) |
+| `ADMIN_PASSWORD` | Yes | Password for admin panel access (default: emer2024admin) |
+| `ADMIN_PASSWORD_HASH` | Yes | Hash for admin auth cookie |
+| `NEXT_PUBLIC_SUPABASE_URL` | No | Supabase URL for database features |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | No | Supabase anon key for database |
 
 ## 📝 License
 
