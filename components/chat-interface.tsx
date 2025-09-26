@@ -32,8 +32,13 @@ export function ChatInterface() {
 
   // Open admin panel in new tab
   const openAdminPanel = (section?: string) => {
-    const url = section ? `/admin/${section}` : '/admin'
-    window.open(url, '_blank', 'noopener,noreferrer')
+    // Get the base URL - works for both localhost and production
+    const baseUrl = typeof window !== 'undefined' ? window.location.origin : ''
+    const path = section ? `/admin/${section}` : '/admin'
+    const fullUrl = `${baseUrl}${path}`
+
+    // Use window.open with full URL
+    window.open(fullUrl, '_blank', 'noopener,noreferrer')
   }
 
   // Determine if chat has started based on messages
@@ -304,7 +309,7 @@ export function ChatInterface() {
                           type="button"
                           variant="ghost"
                           className="bg-zinc-900 border border-[#3D3D3D] text-white hover:bg-zinc-700 text-xs rounded-full px-3 h-8 min-w-[150px]"
-                          onClick={() => openAdminPanel('models')}
+                          onClick={() => openAdminPanel()}
                         >
                           <span className="text-xs mr-2">⚡</span>
                           GPT-4 Turbo
